@@ -51,6 +51,8 @@
 #include <asm/alternative.h>
 #include <asm/mc146818rtc.h>
 #include <asm/cpuid.h>
+#include <asm/guest.h>
+#include <public/arch-x86/cpuid.h>
 
 /* opt_nosmp: If true, secondary processors are ignored. */
 static bool __initdata opt_nosmp;
@@ -703,6 +705,8 @@ void __init noreturn __start_xen(unsigned long mbi_p)
     /* Must be after command line argument parsing and before
      * allocing any xenheap structures wanted in lower memory. */
     kexec_early_calculations();
+
+    probe_hypervisor();
 
     parse_video_info();
 
