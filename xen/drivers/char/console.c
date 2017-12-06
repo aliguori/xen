@@ -85,6 +85,11 @@ static int __read_mostly sercon_handle = -1;
 
 static DEFINE_SPINLOCK(console_lock);
 
+/* send all printk output to QEMU debug log. Input does not change,
+ * nor does dom0 output.
+ */
+static bool_t __read_mostly qemu_debug = false;
+
 /*
  * To control the amount of printing, thresholds are added.
  * These thresholds correspond to the XENLOG logging levels.
@@ -560,14 +565,36 @@ long do_console_io(int cmd, int count, XEN_GUEST_HANDLE_PARAM(char) buffer)
 
 static bool_t console_locks_busted;
 
+#if defined(__x86_64__)
+static void qemu_putstr(const char *str)
+{
+    char c;
+    while ( (c = *str++) != '\0' )
+    {
+        outb(c, 0x12);
+    }
+}
+#else
+static void qemu_putstr(const char *str)
+{
+}
+#endif
+
 static void __putstr(const char *str)
 {
     ASSERT(spin_is_locked(&console_lock));
 
-    sercon_puts(str);
-    video_puts(str);
+    if ( qemu_debug )
+    {
+        qemu_putstr(str);
+    }
+    else
+    {
+        sercon_puts(str);
+        video_puts(str);
 
-    conring_puts(str);
+        conring_puts(str);
+    }
 
     if ( !console_locks_busted )
         tasklet_schedule(&notify_dom0_con_ring_tasklet);
@@ -762,6 +789,8 @@ void __init console_init_preirq(void)
             p++;
         if ( !strncmp(p, "vga", 3) )
             video_init();
+        else if ( !strncmp(p, "qemu", 4) )
+            qemu_debug = true;
         else if ( !strncmp(p, "none", 4) )
             continue;
         else if ( (sh = serial_parse_handle(p)) >= 0 )
