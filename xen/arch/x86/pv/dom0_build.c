@@ -704,7 +704,8 @@ int __init dom0_construct_pv(struct domain *d,
     for ( i = 0; i < XEN_LEGACY_MAX_VCPUS; i++ )
         shared_info(d, vcpu_info[i].evtchn_upcall_mask) = 1;
 
-    printk("Dom0 has maximum %u VCPUs\n", d->max_vcpus);
+    printk("%s has maximum %u VCPUs\n", is_vixen() ? "DomU" : "Dom0",
+           d->max_vcpus);
 
     cpu = v->processor;
     for ( i = 1; i < d->max_vcpus; i++ )
