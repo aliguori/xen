@@ -93,4 +93,8 @@ vixen_transform(struct domain *dom0,
 
 bool vixen_ring_process(uint16_t port);
 
+long vixen_cpu_up(void *data);
+
+long vixen_cpu_down(void *data);
+
 #endif

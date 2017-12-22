@@ -558,3 +558,51 @@ vixen_transform(struct domain *dom0,
 	share_xen_page_with_guest(mfn_to_page(xatp.gpfn), dom0, XENSHARE_writable);
     }
 }
+
+long vixen_cpu_up(void *data)
+{
+    struct vcpu *v = data;
+    long rc;
+
+    BUG_ON(smp_processor_id() != 0);
+
+    if ( !cpu_online(v->vcpu_id) )
+    {
+        rc = cpu_up_helper((void *)(unsigned long)v->vcpu_id);
+        if ( rc )
+        {
+            gprintk(XENLOG_ERR, "Failed to bring up CPU#%u: %ld\n",
+                    v->vcpu_id, rc);
+            return rc;
+        }
+    }
+
+    return vcpu_up(v);
+}
+
+long vixen_cpu_down(void *data)
+{
+    struct vcpu *v = data;
+    long rc;
+
+    BUG_ON(smp_processor_id() != 0);
+
+    if ( !test_and_set_bit(_VPF_down, &v->pause_flags) )
+        vcpu_sleep_sync(v);
+
+    if ( cpu_online(v->vcpu_id) )
+    {
+        rc = cpu_down_helper((void *)(unsigned long)v->vcpu_id);
+        if ( rc )
+            gprintk(XENLOG_ERR, "Failed to bring down CPU#%u: %ld\n",
+                    v->vcpu_id, rc);
+        /*
+         * NB: do not propagate errors from cpu_down_helper failing. The shim
+         * is going to run with extra CPUs, but that's not going to prevent
+         * normal operation. OTOH most guests are not prepared to handle an
+         * error on VCPUOP_down failing, and will likely panic.
+         */
+    }
+
+    return 0;
+}

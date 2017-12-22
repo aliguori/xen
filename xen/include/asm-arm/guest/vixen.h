@@ -88,4 +88,14 @@ static bool vixen_passthru_version(void)
     return false;
 }
 
+long vixen_cpu_up(void *data)
+{
+    return -ENOSYS;
+}
+
+long vixen_cpu_down(void *data)
+{
+    return -ENOSYS;
+}
+
 #endif
