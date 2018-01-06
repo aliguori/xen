@@ -78,4 +78,6 @@ void __init early_vixen_init(void);
 
 u64 vixen_get_cpu_freq(void);
 
+bool vixen_passthru_version(void);
+
 #endif

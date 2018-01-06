@@ -15,6 +15,7 @@
 #include <xsm/xsm.h>
 #include <asm/current.h>
 #include <public/version.h>
+#include <asm/guest/vixen.h>
 
 #ifndef COMPAT
 
@@ -311,14 +312,39 @@ DO(xen_version)(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
     switch ( cmd )
     {
     case XENVER_version:
-        return (xen_major_version() << 16) | xen_minor_version();
+        if ( vixen_passthru_version() )
+            return HYPERVISOR_xen_version(XENVER_version, NULL);
+        else
+        {
+            /* This hypercall is used to force event channel injections
+               after re-enabling interrupts so if we're Vixen, we need
+               to invoke the parent. */
+            if ( is_vixen() )
+                (void)HYPERVISOR_xen_version(0, NULL);
+            return (xen_major_version() << 16) | xen_minor_version();
+        }
 
     case XENVER_extraversion:
     {
         xen_extraversion_t extraversion;
+        int rc;
 
         memset(extraversion, 0, sizeof(extraversion));
-        safe_strcpy(extraversion, deny ? xen_deny() : xen_extra_version());
+        if ( vixen_passthru_version() )
+        {
+            if ( deny )
+                safe_strcpy(extraversion, xen_deny());
+            else
+            {
+                rc = HYPERVISOR_xen_version(XENVER_extraversion, &extraversion);
+                if ( rc )
+                    return rc;
+            }
+        }
+        else
+        {
+            safe_strcpy(extraversion, deny ? xen_deny() : xen_extra_version());
+        }
         if ( copy_to_guest(arg, extraversion, ARRAY_SIZE(extraversion)) )
             return -EFAULT;
         return 0;
@@ -327,12 +353,22 @@ DO(xen_version)(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
     case XENVER_compile_info:
     {
         xen_compile_info_t info;
+        int rc;
 
         memset(&info, 0, sizeof(info));
-        safe_strcpy(info.compiler,       deny ? xen_deny() : xen_compiler());
-        safe_strcpy(info.compile_by,     deny ? xen_deny() : xen_compile_by());
-        safe_strcpy(info.compile_domain, deny ? xen_deny() : xen_compile_domain());
-        safe_strcpy(info.compile_date,   deny ? xen_deny() : xen_compile_date());
+        if ( vixen_passthru_version() )
+        {
+            rc = HYPERVISOR_xen_version(XENVER_compile_info, &info);
+            if ( rc )
+                return rc;
+        }
+        else
+        {
+            safe_strcpy(info.compiler,       deny ? xen_deny() : xen_compiler());
+            safe_strcpy(info.compile_by,     deny ? xen_deny() : xen_compile_by());
+            safe_strcpy(info.compile_domain, deny ? xen_deny() : xen_compile_domain());
+            safe_strcpy(info.compile_date,   deny ? xen_deny() : xen_compile_date());
+        }
         if ( copy_to_guest(arg, &info, 1) )
             return -EFAULT;
         return 0;
@@ -366,9 +402,24 @@ DO(xen_version)(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
     case XENVER_changeset:
     {
         xen_changeset_info_t chgset;
+        int rc;
 
         memset(chgset, 0, sizeof(chgset));
-        safe_strcpy(chgset, deny ? xen_deny() : xen_changeset());
+        if ( vixen_passthru_version() )
+        {
+            if ( deny )
+                safe_strcpy(chgset, xen_deny());
+            else
+            {
+                rc = HYPERVISOR_xen_version(XENVER_changeset, &chgset);
+                if ( rc )
+                    return rc;
+            }
+        }
+        else
+        {
+            safe_strcpy(chgset, deny ? xen_deny() : xen_changeset());
+        }
         if ( copy_to_guest(arg, chgset, ARRAY_SIZE(chgset)) )
             return -EFAULT;
         return 0;
@@ -430,15 +481,29 @@ DO(xen_version)(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
     case XENVER_guest_handle:
     {
         xen_domain_handle_t hdl;
+        int rc;
 
-        if ( deny )
-            memset(&hdl, 0, ARRAY_SIZE(hdl));
+        memset(&hdl, 0, ARRAY_SIZE(hdl));
 
         BUILD_BUG_ON(ARRAY_SIZE(current->domain->handle) != ARRAY_SIZE(hdl));
 
-        if ( copy_to_guest(arg, deny ? hdl : current->domain->handle,
-                           ARRAY_SIZE(hdl) ) )
-            return -EFAULT;
+        if ( vixen_passthru_version() )
+        {
+            if ( !deny )
+            {
+                rc = HYPERVISOR_xen_version(XENVER_guest_handle, &hdl);
+                if ( rc )
+                    return rc;
+            }
+            if ( copy_to_guest(arg, hdl, ARRAY_SIZE(hdl) ) )
+                return -EFAULT;
+        }
+        else
+        {
+            if ( copy_to_guest(arg, deny ? hdl : current->domain->handle,
+                               ARRAY_SIZE(hdl) ) )
+                return -EFAULT;
+        }
         return 0;
     }
 
