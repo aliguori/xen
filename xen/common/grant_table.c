@@ -39,6 +39,7 @@
 #include <xen/vmap.h>
 #include <xsm/xsm.h>
 #include <asm/flushtlb.h>
+#include <asm/guest.h>
 
 /* Per-domain grant information. */
 struct grant_table {
@@ -1207,6 +1208,9 @@ gnttab_map_grant_ref(
     int i;
     struct gnttab_map_grant_ref op;
 
+    if ( is_vixen() )
+        return -ENOSYS;
+
     for ( i = 0; i < count; i++ )
     {
         if ( i && hypercall_preempt_check() )
@@ -1510,6 +1514,9 @@ gnttab_unmap_grant_ref(
     struct gnttab_unmap_grant_ref op;
     struct gnttab_unmap_common common[GNTTAB_UNMAP_BATCH_SIZE];
 
+    if ( is_vixen() )
+        return -ENOSYS;
+
     while ( count != 0 )
     {
         c = min(count, (unsigned int)GNTTAB_UNMAP_BATCH_SIZE);
@@ -1574,6 +1581,9 @@ gnttab_unmap_and_replace(
     int i, c, partial_done, done = 0;
     struct gnttab_unmap_and_replace op;
     struct gnttab_unmap_common common[GNTTAB_UNMAP_BATCH_SIZE];
+
+    if ( is_vixen() )
+        return -ENOSYS;
 
     while ( count != 0 )
     {
@@ -1809,6 +1819,80 @@ grant_table_init(struct domain *d, struct grant_table *gt,
 }
 
 static long
+vixen_gnttab_setup_table(
+    XEN_GUEST_HANDLE_PARAM(gnttab_setup_table_t) uop, unsigned int count)
+{
+    long rc;
+
+    struct gnttab_setup_table op;
+    xen_pfn_t *frame_list = NULL;
+    static void *grant_table;
+    XEN_GUEST_HANDLE(xen_pfn_t) old_frame_list;
+
+    if ( count != 1 )
+        return -EINVAL;
+
+    if ( unlikely(copy_from_guest(&op, uop, 1) != 0) )
+    {
+        gdprintk(XENLOG_INFO, "Fault while reading gnttab_setup_table_t.\n");
+        return -EFAULT;
+    }
+
+    if ( grant_table == NULL ) {
+        struct xen_add_to_physmap xatp;
+        struct domain *d;
+        int i;
+
+        for ( i = 0; i < max_grant_frames; i++ )
+        {
+             grant_table = alloc_xenheap_page();
+             BUG_ON(grant_table == NULL);
+             xatp.domid = DOMID_SELF;
+             xatp.idx = i;
+             xatp.space = XENMAPSPACE_grant_table;
+             xatp.gpfn = virt_to_mfn(grant_table);
+             rc = HYPERVISOR_memory_op(XENMEM_add_to_physmap, &xatp);
+             if ( rc != 0 )
+                 printk("Add to physmap failed! %ld\n", rc);
+
+             d = rcu_lock_current_domain();
+             share_xen_page_with_guest(mfn_to_page(xatp.gpfn), d, XENSHARE_writable);
+             rcu_unlock_domain(d);
+        }
+    }
+
+    if ( op.nr_frames > 0 ) {
+        frame_list = xzalloc_array(xen_pfn_t, op.nr_frames);
+        if ( frame_list == NULL )
+            return -ENOMEM;
+    }
+
+    old_frame_list = op.frame_list;
+    op.frame_list.p = frame_list;
+
+    rc = HYPERVISOR_grant_table_op(GNTTABOP_setup_table, &op, count);
+    op.frame_list = old_frame_list;
+
+    if ( rc >= 0 ) {
+        if ( op.status == 0 && op.nr_frames &&
+             copy_to_guest(old_frame_list, frame_list, op.nr_frames) != 0 ) {
+            rc = -EFAULT;
+            goto out;
+        }
+
+        if ( unlikely(copy_to_guest(uop, &op, 1)) != 0 ) {
+            rc = -EFAULT;
+            goto out;
+        }
+    }
+
+ out:
+    xfree(frame_list);
+
+    return rc;
+}
+
+static long
 gnttab_setup_table(
     XEN_GUEST_HANDLE_PARAM(gnttab_setup_table_t) uop, unsigned int count,
     unsigned int limit_max)
@@ -1818,6 +1902,9 @@ gnttab_setup_table(
     struct domain *d = NULL;
     struct grant_table *gt;
     unsigned int i;
+
+    if ( is_vixen() )
+        return vixen_gnttab_setup_table(uop, count);
 
     if ( count != 1 )
         return -EINVAL;
@@ -1900,6 +1987,26 @@ gnttab_setup_table(
 }
 
 static long
+vixen_gnttab_query_size(
+    XEN_GUEST_HANDLE_PARAM(gnttab_query_size_t) uop, unsigned int count)
+{
+    struct gnttab_query_size op;
+    int rc;
+
+    if ( count != 1 )
+        return -EINVAL;
+
+    if ( unlikely(copy_from_guest(&op, uop, 1)) != 0)
+        return -EFAULT;
+
+    rc = HYPERVISOR_grant_table_op(GNTTABOP_query_size, &op, count);
+    if (rc == 0 && unlikely(__copy_to_guest(uop, &op, 1)) )
+        rc = -EFAULT;
+
+    return rc;
+}
+
+static long
 gnttab_query_size(
     XEN_GUEST_HANDLE_PARAM(gnttab_query_size_t) uop, unsigned int count)
 {
@@ -1909,6 +2016,9 @@ gnttab_query_size(
 
     if ( count != 1 )
         return -EINVAL;
+
+    if ( is_vixen() )
+        return vixen_gnttab_query_size(uop, count);
 
     if ( unlikely(copy_from_guest(&op, uop, 1)) )
         return -EFAULT;
@@ -2022,6 +2132,9 @@ gnttab_transfer(
     unsigned long mfn;
     unsigned int max_bitsize;
     struct active_grant_entry *act;
+
+    if ( is_vixen() )
+        return -ENOSYS;
 
     for ( i = 0; i < count; i++ )
     {
@@ -2824,6 +2937,9 @@ static long gnttab_copy(
     struct gnttab_copy_buf dest = {};
     long rc = 0;
 
+    if ( is_vixen() )
+        return -ENOSYS;
+
     for ( i = 0; i < count; i++ )
     {
         if ( i && hypercall_preempt_check() )
@@ -2876,6 +2992,9 @@ gnttab_set_version(XEN_GUEST_HANDLE_PARAM(gnttab_set_version_t) uop)
     grant_entry_v1_t reserved_entries[GNTTAB_NR_RESERVED_ENTRIES];
     int res;
     unsigned int i;
+
+    if ( is_vixen() )
+        return -ENOSYS;
 
     if ( copy_from_guest(&op, uop, 1) )
         return -EFAULT;
@@ -3029,6 +3148,9 @@ gnttab_get_status_frames(XEN_GUEST_HANDLE_PARAM(gnttab_get_status_frames_t) uop,
     if ( count != 1 )
         return -EINVAL;
 
+    if ( is_vixen() )
+        return -ENOSYS;
+
     if ( unlikely(copy_from_guest(&op, uop, 1) != 0) )
     {
         gdprintk(XENLOG_INFO,
@@ -3098,6 +3220,9 @@ gnttab_get_version(XEN_GUEST_HANDLE_PARAM(gnttab_get_version_t) uop)
     gnttab_get_version_t op;
     struct domain *d;
     int rc;
+
+    if ( is_vixen() )
+        return -ENOSYS;
 
     if ( copy_from_guest(&op, uop, 1) )
         return -EFAULT;
@@ -3194,6 +3319,9 @@ gnttab_swap_grant_ref(XEN_GUEST_HANDLE_PARAM(gnttab_swap_grant_ref_t) uop,
     int i;
     gnttab_swap_grant_ref_t op;
 
+    if ( is_vixen() )
+        return -ENOSYS;
+
     for ( i = 0; i < count; i++ )
     {
         if ( i && hypercall_preempt_check() )
@@ -3289,6 +3417,9 @@ gnttab_cache_flush(XEN_GUEST_HANDLE_PARAM(gnttab_cache_flush_t) uop,
 {
     unsigned int i;
     gnttab_cache_flush_t op;
+
+    if ( is_vixen() )
+        return -ENOSYS;
 
     for ( i = 0; i < count; i++ )
     {
