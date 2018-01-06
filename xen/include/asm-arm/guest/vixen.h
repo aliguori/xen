@@ -83,4 +83,9 @@ static inline int vixen_get_domid(void)
     return 0;
 }
 
+static bool vixen_passthru_version(void)
+{
+    return false;
+}
+
 #endif

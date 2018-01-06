@@ -31,8 +31,10 @@ static int in_vixen;
 static int vixen_domid = 1;
 static uint32_t vixen_reserved_mem_pgstart = 0xfeff0000;
 static shared_info_t *global_si;
+static bool vixen_ptver;
 
 integer_param("vixen_domid", vixen_domid);
+boolean_param("vixen_ptver", vixen_ptver);
 
 void __init init_vixen(void)
 {
@@ -141,4 +143,9 @@ u64 vixen_get_cpu_freq(void)
     } else {
 	return imm >> time.tsc_shift;
     }
+}
+
+bool vixen_passthru_version(void)
+{
+    return is_vixen() && vixen_ptver;
 }
