@@ -70,4 +70,6 @@ HYPERVISOR_vcpu_op(int cmd, int vcpuid, void *extra_args)
 
 bool is_vixen(void);
 
+int vixen_get_domid(void);
+
 #endif

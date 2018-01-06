@@ -22,9 +22,16 @@
 #include <asm/guest/vixen.h>
 
 static int in_vixen;
+static int vixen_domid = 1;
+
+integer_param("vixen_domid", vixen_domid);
 
 bool is_vixen(void)
 {
     return in_vixen > 0;
 }
 
+int vixen_get_domid(void)
+{
+    return vixen_domid;
+}

@@ -78,4 +78,9 @@ static inline bool vixen_ring_process(uint16_t port)
     return false;
 }
 
+static inline int vixen_get_domid(void)
+{
+    return 0;
+}
+
 #endif
