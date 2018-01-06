@@ -120,3 +120,25 @@ void vixen_get_reserved_mem(unsigned long *start_pfn, unsigned long *end_pfn)
     /* This is part of the Xen ABI */
     *end_pfn   = 0x100000;
 }
+
+u64 vixen_get_cpu_freq(void)
+{
+    volatile vcpu_time_info_t *timep = &global_si->native.vcpu_info[0].time;
+    vcpu_time_info_t time;
+    uint32_t version;
+    u64 imm;
+
+    do {
+	version = timep->version;
+	rmb();
+	time = *timep;
+    } while ((version & 1) || version != time.version);
+
+    imm = (1000000000ULL << 32) / time.tsc_to_system_mul;
+
+    if (time.tsc_shift < 0) {
+	return imm << -time.tsc_shift;
+    } else {
+	return imm >> time.tsc_shift;
+    }
+}
