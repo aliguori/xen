@@ -74,4 +74,8 @@ int vixen_get_domid(void);
 
 void vixen_get_reserved_mem(unsigned long *start_pfn, unsigned long *end_pfn);
 
+void __init init_vixen(void);
+
+void __init early_vixen_init(void);
+
 #endif

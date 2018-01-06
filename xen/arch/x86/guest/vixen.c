@@ -20,12 +20,88 @@
  */
 
 #include <asm/guest/vixen.h>
+#include <public/version.h>
+#include <public/hvm/hvm_info_table.h>
+
+#define X86_HVM_END_SPECIAL_REGION  0xff000u
+
+#define SHARED_INFO_PFN		(X86_HVM_END_SPECIAL_REGION + 0)
 
 static int in_vixen;
 static int vixen_domid = 1;
 static uint32_t vixen_reserved_mem_pgstart = 0xfeff0000;
+static shared_info_t *global_si;
 
 integer_param("vixen_domid", vixen_domid);
+
+void __init init_vixen(void)
+{
+    int major, minor, version;
+    struct hvm_info_table *hvm_info;
+
+    if ( !xen_guest )
+    {
+        printk("Disabling Vixen because we are not running under Xen\n");
+        in_vixen = -1;
+        return;
+    }
+
+    if ( vixen_domid < 0 )
+    {
+        printk("Disabling Vixen due to user request\n");
+        in_vixen = -1;
+        return;
+    }
+
+    version = HYPERVISOR_xen_version(XENVER_version, NULL);
+    major = version >> 16;
+    minor = version & 0xffff;
+
+    printk("Vixen running under Xen %d.%d\n", major, minor);
+
+    hvm_info = maddr_to_virt(HVM_INFO_PADDR);
+    if ( strncmp(hvm_info->signature, "HVM INFO", 8) == 0 &&
+	 hvm_info->length >= sizeof(struct hvm_info_table) &&
+	 hvm_info->length < (PAGE_SIZE - HVM_INFO_OFFSET) )
+    {
+	uint8_t sum;
+	uint32_t i;
+
+	for ( i = 0, sum = 0; i < hvm_info->length; i++ )
+	    sum += ((uint8_t *)hvm_info)[i];
+
+	if ( sum == 0 )
+	{
+	    vixen_reserved_mem_pgstart = hvm_info->reserved_mem_pgstart << XEN_PAGE_SHIFT;
+	}
+    }
+
+    in_vixen = 1;
+}
+
+void __init early_vixen_init(void)
+{
+    struct xen_add_to_physmap xatp;
+    long rc;
+
+    if ( !is_vixen() )
+	return;
+
+    global_si = mfn_to_virt(SHARED_INFO_PFN);
+
+    /* Setup our own shared info area */
+    xatp.domid = DOMID_SELF;
+    xatp.idx = 0;
+    xatp.space = XENMAPSPACE_shared_info;
+    xatp.gpfn = virt_to_mfn(global_si);
+
+    rc = HYPERVISOR_memory_op(XENMEM_add_to_physmap, &xatp);
+    if ( rc < 0 )
+        printk("Setting shared info page failed: %ld\n", rc);
+
+    memset(&global_si->native.evtchn_mask[0], 0x00,
+           sizeof(global_si->native.evtchn_mask));
+}
 
 bool is_vixen(void)
 {
