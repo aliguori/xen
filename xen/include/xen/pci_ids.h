@@ -9,3 +9,5 @@
 #define PCI_VENDOR_ID_BROADCOM           0x14e4
 
 #define PCI_VENDOR_ID_INTEL              0x8086
+
+#define PCI_VENDOR_ID_XENSOURCE          0x5853
