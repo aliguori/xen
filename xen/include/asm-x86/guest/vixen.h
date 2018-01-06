@@ -72,4 +72,6 @@ bool is_vixen(void);
 
 int vixen_get_domid(void);
 
+void vixen_get_reserved_mem(unsigned long *start_pfn, unsigned long *end_pfn);
+
 #endif

@@ -122,6 +122,7 @@
 #include <asm/fixmap.h>
 #include <asm/io_apic.h>
 #include <asm/pci.h>
+#include <asm/guest.h>
 
 #include <asm/hvm/grant_table.h>
 #include <asm/pv/grant_table.h>
@@ -945,7 +946,7 @@ get_page_from_l1e(
             case 0:
                 break;
             case 1:
-                if ( !is_hardware_domain(l1e_owner) )
+                if ( !is_vixen() && !is_hardware_domain(l1e_owner) )
                     break;
                 /* fallthrough */
             case -1:

@@ -23,6 +23,7 @@
 
 static int in_vixen;
 static int vixen_domid = 1;
+static uint32_t vixen_reserved_mem_pgstart = 0xfeff0000;
 
 integer_param("vixen_domid", vixen_domid);
 
@@ -34,4 +35,12 @@ bool is_vixen(void)
 int vixen_get_domid(void)
 {
     return vixen_domid;
+}
+
+void vixen_get_reserved_mem(unsigned long *start_pfn, unsigned long *end_pfn)
+{
+    *start_pfn = vixen_reserved_mem_pgstart >> XEN_PAGE_SHIFT;
+
+    /* This is part of the Xen ABI */
+    *end_pfn   = 0x100000;
 }

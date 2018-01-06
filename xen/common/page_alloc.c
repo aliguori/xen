@@ -303,6 +303,13 @@ void __init init_boot_pages(paddr_t ps, paddr_t pe)
             badpage++;
         }
     }
+
+    if ( is_vixen() ) {
+        unsigned long start_pfn, end_pfn;
+
+        vixen_get_reserved_mem(&start_pfn, &end_pfn);
+        bootmem_region_zap(start_pfn, end_pfn);
+    }
 #endif
 
     /* Check new pages against the bad-page list. */
