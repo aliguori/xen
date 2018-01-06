@@ -39,6 +39,7 @@
 #include <xen/vmap.h>
 #include <xsm/xsm.h>
 #include <asm/flushtlb.h>
+#include <asm/guest.h>
 
 /* Per-domain grant information. */
 struct grant_table {
@@ -1801,6 +1802,56 @@ grant_table_init(struct domain *d, struct grant_table *gt,
 }
 
 static long
+vixen_gnttab_setup_table(
+    XEN_GUEST_HANDLE_PARAM(gnttab_setup_table_t) uop, unsigned int count)
+{
+    long rc;
+
+    struct gnttab_setup_table op;
+    xen_pfn_t *frame_list = NULL;
+    XEN_GUEST_HANDLE(xen_pfn_t) old_frame_list;
+
+    if ( count != 1 )
+        return -EINVAL;
+
+    if ( unlikely(copy_from_guest(&op, uop, 1) != 0) )
+    {
+        gdprintk(XENLOG_INFO, "Fault while reading gnttab_setup_table_t.\n");
+        return -EFAULT;
+    }
+
+    if ( op.nr_frames > 0 ) {
+        frame_list = xzalloc_array(xen_pfn_t, op.nr_frames);
+        if ( frame_list == NULL )
+            return -ENOMEM;
+    }
+
+    old_frame_list = op.frame_list;
+    op.frame_list.p = frame_list;
+
+    rc = HYPERVISOR_grant_table_op(GNTTABOP_setup_table, &op, count);
+    op.frame_list = old_frame_list;
+
+    if ( rc >= 0 ) {
+        if ( op.status == 0 && op.nr_frames &&
+             copy_to_guest(old_frame_list, frame_list, op.nr_frames) != 0 ) {
+            rc = -EFAULT;
+            goto out;
+        }
+
+        if ( unlikely(copy_to_guest(uop, &op, 1)) != 0 ) {
+            rc = -EFAULT;
+            goto out;
+        }
+    }
+
+ out:
+    xfree(frame_list);
+
+    return rc;
+}
+
+static long
 gnttab_setup_table(
     XEN_GUEST_HANDLE_PARAM(gnttab_setup_table_t) uop, unsigned int count,
     unsigned int limit_max)
@@ -1889,6 +1940,26 @@ gnttab_setup_table(
         return -EFAULT;
 
     return 0;
+}
+
+static long
+vixen_gnttab_query_size(
+    XEN_GUEST_HANDLE_PARAM(gnttab_query_size_t) uop, unsigned int count)
+{
+    struct gnttab_query_size op;
+    int rc;
+
+    if ( count != 1 )
+        return -EINVAL;
+
+    if ( unlikely(copy_from_guest(&op, uop, 1)) != 0)
+        return -EFAULT;
+
+    rc = HYPERVISOR_grant_table_op(GNTTABOP_query_size, &op, count);
+    if (rc == 0 && unlikely(__copy_to_guest(uop, &op, 1)) )
+        rc = -EFAULT;
+
+    return rc;
 }
 
 static long
@@ -3311,6 +3382,33 @@ gnttab_cache_flush(XEN_GUEST_HANDLE_PARAM(gnttab_cache_flush_t) uop,
     return 0;
 }
 
+static long
+vixen_do_grant_table_op(
+    unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) uop, unsigned int count)
+{
+    long rc;
+
+    rc = -EFAULT;
+    switch ( cmd )
+    {
+    case GNTTABOP_setup_table:
+        rc = vixen_gnttab_setup_table(
+            guest_handle_cast(uop, gnttab_setup_table_t), count);
+        break;
+
+    case GNTTABOP_query_size:
+        rc = vixen_gnttab_query_size(
+            guest_handle_cast(uop, gnttab_query_size_t), count);
+        break;
+
+    default:
+        rc = -ENOSYS;
+        break;
+    }
+
+    return rc;
+ }
+
 long
 do_grant_table_op(
     unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) uop, unsigned int count)
@@ -3323,6 +3421,9 @@ do_grant_table_op(
 
     if ( (cmd &= GNTTABOP_CMD_MASK) != GNTTABOP_cache_flush && opaque_in )
         return -EINVAL;
+
+    if ( is_vixen() )
+        return vixen_do_grant_table_op(cmd, uop, count);
 
     rc = -EFAULT;
     switch ( cmd )

@@ -22,10 +22,14 @@
 #include <asm/guest/vixen.h>
 #include <public/version.h>
 #include <public/hvm/hvm_info_table.h>
+#include <xen/grant_table.h>
+
+#define PCI_DEVICE_ID_XENSOURCE_PLATFORM	0x0001
 
 #define X86_HVM_END_SPECIAL_REGION  0xff000u
 
 #define SHARED_INFO_PFN		(X86_HVM_END_SPECIAL_REGION + 0)
+#define GRANT_TABLE_PFN_0	(X86_HVM_END_SPECIAL_REGION + 1)
 
 static int in_vixen;
 static int vixen_domid = 1;
