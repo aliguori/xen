@@ -464,7 +464,9 @@ int __init dom0_setup_permissions(struct domain *d)
 int __init construct_dom0(struct domain *d, const module_t *image,
                           unsigned long image_headroom, module_t *initrd,
                           void *(*bootstrap_map)(const module_t *),
-                          char *cmdline)
+                          char *cmdline,
+                          xen_pfn_t store_mfn, uint32_t store_evtchn,
+                          xen_pfn_t console_mfn, uint32_t console_evtchn)
 {
     int rc;
 
@@ -484,7 +486,8 @@ int __init construct_dom0(struct domain *d, const module_t *image,
 #endif
 
     rc = (is_hvm_domain(d) ? dom0_construct_pvh : dom0_construct_pv)
-         (d, image, image_headroom, initrd, bootstrap_map, cmdline);
+         (d, image, image_headroom, initrd, bootstrap_map, cmdline,
+          store_mfn, store_evtchn, console_mfn, console_evtchn);
     if ( rc )
         return rc;
 
