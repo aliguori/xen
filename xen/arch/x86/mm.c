@@ -122,6 +122,7 @@
 #include <asm/fixmap.h>
 #include <asm/io_apic.h>
 #include <asm/pci.h>
+#include <asm/guest.h>
 
 #include <asm/hvm/grant_table.h>
 #include <asm/pv/grant_table.h>
@@ -945,7 +946,7 @@ get_page_from_l1e(
             case 0:
                 break;
             case 1:
-                if ( !is_hardware_domain(l1e_owner) )
+                if ( !is_vixen() && !is_hardware_domain(l1e_owner) )
                     break;
                 /* fallthrough */
             case -1:
@@ -5536,6 +5537,21 @@ void arch_dump_shared_mem_info(void)
             mem_sharing_get_nr_saved_mfns());
 }
 
+const unsigned long *__init
+vixen_get_platform_badpages(unsigned int *array_size)
+{
+    static unsigned long __initdata bad_pages[] = {
+        0xfeffc000,
+        0xfeffd000,
+        0xfeffe000,
+        0xfefff000,
+    };
+
+    *array_size = ARRAY_SIZE(bad_pages);
+
+    return bad_pages;
+}
+
 const unsigned long *__init get_platform_badpages(unsigned int *array_size)
 {
     u32 igd_id;
@@ -5546,6 +5562,9 @@ const unsigned long *__init get_platform_badpages(unsigned int *array_size)
         0x20138000,
         0x40004000,
     };
+
+    if ( is_vixen() )
+        return vixen_get_platform_badpages(array_size);
 
     *array_size = ARRAY_SIZE(bad_pages);
     igd_id = pci_conf_read32(0, 0, 2, 0, 0);
