@@ -869,6 +869,9 @@ void __init noreturn __start_xen(unsigned long mbi_p)
     else
         panic("Bootloader provided no memory information.");
 
+    /* Vixen must be initialized before init_e820() */
+    init_vixen();
+
     /* Sanitise the raw E820 map to produce a final clean version. */
     max_page = raw_max_page = init_e820(memmap_type, &e820_raw);
 
@@ -1515,6 +1518,8 @@ void __init noreturn __start_xen(unsigned long mbi_p)
     trap_init();
 
     rcu_init();
+
+    early_vixen_init();
 
     early_time_init();
 

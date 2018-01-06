@@ -72,4 +72,8 @@ bool is_vixen(void);
 
 int vixen_get_domid(void);
 
+void __init init_vixen(void);
+
+void __init early_vixen_init(void);
+
 #endif
