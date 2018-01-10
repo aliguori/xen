@@ -24,6 +24,7 @@
 #include <xen/event.h>
 #include <asm/apic.h>
 #include <public/io/console.h>
+#include <xen/lib.h>
 
 static int in_vixen;
 static uint8_t global_si_data[4 << 10] __attribute__((aligned(4096)));
@@ -350,6 +351,13 @@ void vixen_vcpu_initialize(struct vcpu *v)
             if ( !rc )
                 vixen_needs_apic_ack = false;
         }
+    } else {
+        /*
+         * XXX Upcall vector setup succeeded. Trick xl to think the guest is
+         * enlightened!
+         */
+        if ( hvm_set_parameter(HVM_PARAM_CALLBACK_IRQ, -1) )
+            printk("Setting dummy value for callback_via didn't work\n");
     }
 
     if ( rc )
